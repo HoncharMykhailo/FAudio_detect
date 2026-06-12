@@ -5,9 +5,6 @@ import librosa
 import scipy.fftpack
 import concurrent.futures
 
-# ==========================================
-# 1. НАЛАШТУВАННЯ ШЛЯХІВ
-# ==========================================
 
 #TEST_FAKE_DIR = r"C:\Users\my380\Documents\education\4c2\diploma\t3\audio\for-2seconds\testing\fake"
 #TEST_REAL_DIR = r"C:\Users\my380\Documents\education\4c2\diploma\t3\audio\for-2seconds\testing\real"
@@ -41,13 +38,9 @@ DUR = 1.0
 SAMPLES_PER_CHUNK = int(SAMPLE_RATE * DUR)
 MIN_RMS = 0.005
 
-# Скільки логічних процесорів використовувати (рекомендую 10-12 з 16, щоб не перевантажити RAM)
 MAX_WORKERS = 12
 
 
-# ==========================================
-# 2. ФУНКЦІЇ ОБРОБКИ (ВОРКЕРИ)
-# ==========================================
 def extract_lfcc(y, sr, n_mfcc=40, n_filters=128):
     S = np.abs(librosa.stft(y, n_fft=1024, hop_length=512)) ** 2
     fft_freqs = librosa.fft_frequencies(sr=sr, n_fft=1024)
@@ -73,7 +66,6 @@ def process_chunk(chunk, sr):
     return wave, spec, fft, mel, lfcc
 
 
-# Ця функція виконується в окремому процесі для ОДНОГО файлу
 def process_single_file(args):
     file_path, label_val = args
     file_data = {'wave': [], 'spec': [], 'fft': [], 'mel': [], 'lfcc': [], 'y': []}
@@ -95,14 +87,11 @@ def process_single_file(args):
             file_data['lfcc'].append(lfcc)
             file_data['y'].append(label_val)
     except Exception as e:
-        pass  # Ігноруємо биті файли
+        pass  
 
     return file_data
 
 
-# ==========================================
-# 3. ОСНОВНА ФУНКЦІЯ ОРКЕСТРАЦІЇ
-# ==========================================
 def process_and_save_folder(folder_path, split_name, label_name, label_val):
     print(f"\n📂 Відкриваємо папку: {folder_path}")
     print(f"   Призначення: {split_name} | Клас: {label_name} | Потоків: {MAX_WORKERS}")
@@ -121,30 +110,24 @@ def process_and_save_folder(folder_path, split_name, label_name, label_val):
         print("⚠️ Папка порожня!")
         return
 
-    # Підготовлюємо аргументи для багатопроцесорності
     file_paths = [(os.path.join(folder_path, f), label_val) for f in valid_files]
     main_data = {'wave': [], 'spec': [], 'fft': [], 'mel': [], 'lfcc': [], 'y': []}
 
     print(f"🚀 Запуск паралельної обробки {total_files} файлів...")
 
-    # Використовуємо ProcessPoolExecutor для паралельних обчислень
     with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # submit відправляє завдання у пул
         futures = {executor.submit(process_single_file, args): args for args in file_paths}
 
         last_percent = -1
         completed = 0
 
-        # Обробляємо результати по мірі їх готовності
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
 
-            # Додаємо результати окремого файлу до загального масиву
             if len(result['y']) > 0:
                 for key in main_data.keys():
                     main_data[key].extend(result[key])
 
-            # Прогрес-бар
             completed += 1
             current_percent = int((completed / total_files) * 100)
             if current_percent > last_percent:
@@ -173,7 +156,6 @@ def process_and_save_folder(folder_path, split_name, label_name, label_val):
 
 
 if __name__ == "__main__":
-    # Цей блок if __name__ == "__main__": є КРИТИЧНО ВАЖЛИВИМ для ProcessPoolExecutor у Windows!
     print("=== ПОЧАТОК ПАРАЛЕЛЬНОЇ ОБРОБКИ ДАНИХ ===")
 
     process_and_save_folder(TRAIN_FAKE_DIR, "training", "fake", label_val=1)
