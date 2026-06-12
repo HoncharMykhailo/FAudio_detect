@@ -7,12 +7,8 @@ from tensorflow.keras.layers import Conv2D, MaxPooling2D, Conv1D, MaxPooling1D, 
     BatchNormalization
 from tensorflow.keras.callbacks import EarlyStopping
 
-# Вимикаємо зайві логи TensorFlow
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-# ==========================================
-# 0. ОПТИМІЗАЦІЯ ПАМ'ЯТІ GPU
-# ==========================================
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
@@ -21,21 +17,13 @@ if gpus:
     except RuntimeError as e:
         print(f"Помилка налаштування GPU: {e}")
 
-# ==========================================
-# 1. НАЛАШТУВАННЯ ШЛЯХІВ ТА ЛІМІТІВ
-# ==========================================
-# Список усіх папок з датасетами, які ви хочете об'єднати
 DATA_DIRS = [
   #  r"data\in_the_wild",
    r"data\f2s",
   #  r"data\HomeBrew"
 ]
-
-# Куди зберігати фінальні моделі
 MODELS_DIR = r"training\HomeBrew"
 
-# МАКСИМАЛЬНА кількість файлів КОЖНОГО КЛАСУ (real/fake),
-# яку ми беремо з ОДНОГО датасету.
 MAX_SAMPLES_PER_CLASS = 32*700 #batch size * k
 
 os.makedirs(MODELS_DIR, exist_ok=True)
@@ -49,9 +37,6 @@ MODEL_FILES = {
 }
 
 
-# ==========================================
-# 2. АРХІТЕКТУРИ МЕРЕЖ
-# ==========================================
 def build_cnn_2d(input_shape):
     model = Sequential([
         BatchNormalization(input_shape=input_shape),
@@ -75,10 +60,6 @@ def build_cnn_1d(input_shape):
                   metrics=['accuracy'])
     return model
 
-
-# ==========================================
-# 3. ДОПОМІЖНА ФУНКЦІЯ ЗАВАНТАЖЕННЯ ДАНИХ (ДЛЯ КІЛЬКОХ ДАТАСЕТІВ)
-# ==========================================
 def load_and_combine(feat_name, split_name):
     """
     Завантажує дані з кількох датасетів, бере не більше MAX_SAMPLES_PER_CLASS
@@ -87,7 +68,6 @@ def load_and_combine(feat_name, split_name):
     total_samples = 0
     feature_shape = None
 
-    # --- ПРОХІД 1: Рахуємо потрібний розмір масиву без завантаження даних у RAM ---
     for data_dir in DATA_DIRS:
         fake_path = os.path.join(data_dir, split_name, "fake", f"{feat_name}.npz")
         real_path = os.path.join(data_dir, split_name, "real", f"{feat_name}.npz")
@@ -107,7 +87,6 @@ def load_and_combine(feat_name, split_name):
     if total_samples == 0:
         raise ValueError(f"Дані для ознаки {feat_name} не знайдені в жодному з датасетів!")
 
-    # --- ПРОХІД 2: Виділяємо пам'ять та переносимо дані ---
     new_shape = (total_samples,) + feature_shape
     X = np.empty(new_shape, dtype=np.float32)
     y = np.empty((total_samples,), dtype=np.int8)
@@ -116,7 +95,6 @@ def load_and_combine(feat_name, split_name):
 
     print(f"  [Виділено пам'ять під {total_samples} зразків (max: {MAX_SAMPLES_PER_CLASS} на клас з датасету)]")
 
-    # Завантажуємо ФЕЙКИ з усіх датасетів
     for data_dir in DATA_DIRS:
         fake_path = os.path.join(data_dir, split_name, "fake", f"{feat_name}.npz")
         if os.path.exists(fake_path):
@@ -127,7 +105,6 @@ def load_and_combine(feat_name, split_name):
                 y[current_idx:current_idx + n] = fake_data['y'][:n]
                 current_idx += n
 
-    # Завантажуємо РЕАЛЬНІ з усіх датасетів
     for data_dir in DATA_DIRS:
         real_path = os.path.join(data_dir, split_name, "real", f"{feat_name}.npz")
         if os.path.exists(real_path):
@@ -142,9 +119,6 @@ def load_and_combine(feat_name, split_name):
     return X, y
 
 
-# ==========================================
-# 4. ПІДГОТОВКА ТА ТРЕНУВАННЯ СУДДІ
-# ==========================================
 def prepare_judge_data():
     print("\n" + "=" * 50)
     print("⚖️ ФАЗА 2: ПІДГОТОВКА ДАНИХ ДЛЯ СУДДІ (META-LEARNER)")
@@ -199,8 +173,6 @@ def train_meta_learner():
     print(f"✅ ФІНАЛ: Модель Judge успішно збережена як '{judge_path}'!")
 
 
-# ==========================================
-# 5. ГОЛОВНИЙ КОНВЕЄР1
 if __name__ == "__main__":
     print("=== ПОЧАТОК ГЛОБАЛЬНОГО ТРЕНУВАННЯ (MIXED DATASETS) ===")
 
@@ -214,7 +186,6 @@ if __name__ == "__main__":
         ('lfcc', MODEL_FILES['lfcc'], build_cnn_2d)
     ]
 
-    # --- ФАЗА 1: ТРЕНУВАННЯ БАЗОВИХ МОДЕЛЕЙ ---
     for feat_name, filename, builder in models_config:
         print("\n" + "=" * 50)
         print(f"🚀 ФАЗА 1: ТРЕНУВАННЯ БАЗОВОЇ МОДЕЛІ: {feat_name.upper()}")
@@ -229,7 +200,7 @@ if __name__ == "__main__":
             X_train, y_train,
             epochs=15,
             batch_size=32,
-            shuffle=True,  # Перемішування обов'язкове, оскільки ми зчитуємо спочатку фейки, потім реальні!
+            shuffle=True,  
             validation_data=(X_test, y_test),
             callbacks=[early_stop]
         )
@@ -242,6 +213,5 @@ if __name__ == "__main__":
         gc.collect()
         tf.keras.backend.clear_session()
 
-    # --- ФАЗА 2: ТРЕНУВАННЯ СУДДІ ---
     train_meta_learner()
     print("\n🎉 Увесь конвеєр машинного навчання завершено успішно!")
